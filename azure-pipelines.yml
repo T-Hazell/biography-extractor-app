@@ -5,6 +5,7 @@
 trigger:
 - main
 
+pool: dell-pc
 resources:
 - repo: self
 
