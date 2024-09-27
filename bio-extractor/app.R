@@ -1,8 +1,8 @@
 library(shiny)
 library(rvest)
 library(tidyverse)
-# remotes::install_github('rstudio/chromote')
-# library(curl)
+remotes::install_github("rstudio/chromote")
+library(curl)
 
 # Define the CareerTextExtractor function
 CareerTextExtractor <- function(input) {
@@ -36,7 +36,6 @@ AkimNameFinder <- function(input) {
     }
     return("No name found")
 }
-
 
 # Define the LinkToCareerText function
 LinkToCareerText <- function(link) {
@@ -148,6 +147,7 @@ ui <- fluidPage(
             actionButton("bio_submit", "Submit biography")
         ),
         mainPanel(
+            textOutput("raw_html"),
             htmlOutput("gpt_response"),
             tableOutput("gpt_table")
         )
@@ -168,6 +168,8 @@ server <- function(input, output, session) {
             }
         )
       
+        output$raw_html <- renderText(as.character(html_content))
+
         biography <- ExtractCareerText(html_content)
         akim_name <- ExtractAkimName(html_content)
 
