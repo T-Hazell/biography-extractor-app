@@ -1,6 +1,22 @@
 library(shiny)
 library(rvest)
 library(tidyverse)
+library(chromote)
+library(curl)
+
+# These rows are required for running on a deployed shiny server :)
+# Sys.setenv(CHROMOTE_CHROME = "/srv/shiny-server/bio-extractor/chrome/linux-129.0.6668.70/chrome-linux64/chrome")
+
+# chromote::set_default_chromote_object(
+#     chromote::Chromote$new(chromote::Chrome$new(
+#         args = c(
+#             "--disable-gpu",
+#             "--no-sandbox",
+#             "--disable-dev-shm-usage", # required bc the target easily crashes
+#             c("--force-color-profile", "srgb")
+#         )
+#     ))
+# )
 
 # Define the CareerTextExtractor function
 CareerTextExtractor <- function(input) {
