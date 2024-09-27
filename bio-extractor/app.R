@@ -1,3 +1,71 @@
+#' Biography Extractor Shiny App
+#'
+#' This Shiny application extracts and processes biographies from given URLs or text inputs.
+#' It uses various functions to parse HTML content, extract career information, and interact
+#' with the OpenAI API to format the extracted data.
+#'
+#' @file app.R
+#' @library shiny
+#' @library rvest
+#' @library tidyverse
+#' @library curl
+#' @library chromote
+#'
+#' @section Functions:
+#' \describe{
+#'   \item{\code{CareerTextExtractor(input)}}{
+#'     Extracts career-related text from the given HTML input.
+#'     @param input HTML content as a character string.
+#'     @return Extracted career text or "No biography found".
+#'   }
+#'   \item{\code{AkimNameFinder(input)}}{
+#'     Extracts the Akim name from the given HTML input.
+#'     @param input HTML content as a character string.
+#'     @return Extracted Akim name or "No name found".
+#'   }
+#'   \item{\code{LinkToCareerText(link)}}{
+#'     Fetches and processes the HTML content from the given URL.
+#'     @param link URL as a character string.
+#'     @return HTML content as a character string.
+#'   }
+#'   \item{\code{GPTBiographyPrompter(prompt, model)}}{
+#'     Sends a prompt to the OpenAI API and retrieves the response.
+#'     @param prompt The prompt to send to the API.
+#'     @param model The model type to use (e.g., gpt-3.5-turbo, gpt-4).
+#'     @return The content of the API response.
+#'   }
+#' }
+#'
+#' @section UI:
+#' The user interface consists of:
+#' \describe{
+#'   \item{titlePanel}{Displays the title "Biography Extractor".}
+#'   \item{sidebarPanel}{
+#'     Contains input fields for URL, Akim name, and biography text, along with submit buttons.
+#'   }
+#'   \item{mainPanel}{
+#'     Displays the GPT response and a table of the extracted data.
+#'   }
+#' }
+#'
+#' @section Server:
+#' The server logic includes:
+#' \describe{
+#'   \item{Reactive Values}{
+#'     \code{akim_name_reactive} stores the Akim name.
+#'   }
+#'   \item{Event Observers}{
+#'     \code{observeEvent(input$url_submit)} processes the URL input and updates the text areas.
+#'     \code{observeEvent(input$bio_submit)} processes the biography input and updates the output.
+#'   }
+#'   \item{Outputs}{
+#'     \code{output$gpt_response} displays the GPT response.
+#'     \code{output$gpt_table} displays the extracted data in a table.
+#'   }
+#' }
+#'
+#' @section Running the Application:
+#' The application is run using \code{shinyApp(ui = ui, server = server)}.
 library(shiny)
 library(rvest)
 library(tidyverse)
@@ -53,7 +121,6 @@ AkimNameFinder <- function(input) {
 
 # Define the LinkToCareerText function
 LinkToCareerText <- function(link) {
-
     page <- link |>
         read_html_live()
 
@@ -90,7 +157,7 @@ GPTBiographyPrompter <- function(prompt, model) {
             Authorization = paste(
                 "Bearer",
                 # Private API key follows
-                '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'
+                "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"
             )
         ),
         # Content is JSON
@@ -170,7 +237,7 @@ server <- function(input, output, session) {
                 return("No biography found")
             }
         )
-      
+
         biography <- CareerTextExtractor(html_content)
         akim_name <- AkimNameFinder(html_content)
 
