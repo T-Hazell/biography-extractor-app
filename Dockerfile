@@ -9,11 +9,20 @@ RUN apt-get update && apt-get install -y \
     libxt-dev \
     libssl-dev
 
-## Install chrome for chromote
-RUN apt-get install -y wget
-RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \ 
-    && echo "deb http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list
-RUN apt-get update && apt-get -y install google-chrome-stable
+# please review all the latest versions here:
+# https://googlechromelabs.github.io/chrome-for-testing/
+ENV CHROMEDRIVER_VERSION=129.0.6668.70
+
+### install chrome
+RUN apt-get update && apt-get install -y wget && apt-get install -y zip
+RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+RUN apt-get install -y ./google-chrome-stable_current_amd64.deb
+
+### install chromedriver
+RUN wget https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/$CHROMEDRIVER_VERSION/linux64/chromedriver-linux64.zip \
+    && unzip chromedriver-linux64.zip && rm -dfr chromedriver_linux64.zip \
+    && mv /chromedriver-linux64/chromedriver /usr/bin/chromedriver \
+    && chmod +x /usr/bin/chromedriver
     
 ## Install R libraries
 RUN R -e "install.packages(c('shiny', 'tidyverse', 'rvest', 'httr'))"
