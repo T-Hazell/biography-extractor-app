@@ -1,5 +1,5 @@
 # FROM rocker/shiny-verse:latest
-FROM rocker/shiny-verse:latest
+FROM rocker/shiny-verse:4.4.1
 
 ## Install any Linux system dependencies
 RUN apt-get update && apt-get install -y \
@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev
 
 ## Install R libraries
-RUN R -e "install.packages(c('shiny', 'tidyverse', 'rvest', 'httr'), repos = https://cran.rstudio.com/)"
+RUN R -e "install.packages(c('shiny', 'tidyverse', 'rvest', 'httr'))"
 
 ## Copy Shiny application files
 COPY /bio-extractor /srv/shiny-server/
