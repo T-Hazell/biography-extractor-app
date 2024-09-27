@@ -1,6 +1,8 @@
 library(shiny)
 library(rvest)
 library(tidyverse)
+remotes::install_github('rstudio/chromote')
+library(curl)
 
 # Define the CareerTextExtractor function
 CareerTextExtractor <- function(input) {
