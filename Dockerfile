@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
 
 ## Install R libraries
 RUN R -e "install.packages(c('shiny', 'tidyverse', 'rvest', 'httr'))"
+RUN R -e "remotes::install_github('rstudio/chromote')"
 
 ## Copy Shiny application files
 COPY /bio-extractor /srv/shiny-server/
