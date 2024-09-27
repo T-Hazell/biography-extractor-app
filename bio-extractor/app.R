@@ -147,6 +147,7 @@ ui <- fluidPage(
             actionButton("bio_submit", "Submit biography")
         ),
         mainPanel(
+            textOutput("raw_html"),
             htmlOutput("gpt_response"),
             tableOutput("gpt_table")
         )
@@ -166,6 +167,9 @@ server <- function(input, output, session) {
                 return("No biography found")
             }
         )
+      
+        output$raw_html <- renderText(as.character(html_content))
+
         biography <- ExtractCareerText(html_content)
         akim_name <- ExtractAkimName(html_content)
 
