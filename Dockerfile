@@ -1,5 +1,5 @@
 # FROM rocker/shiny-verse:latest
-FROM rocker/shiny-verse:4.0.0
+FROM rocker/shiny-verse:latest
 
 ## Install any Linux system dependencies
 RUN apt-get update && apt-get install -y \

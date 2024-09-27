@@ -143,7 +143,7 @@ ui <- fluidPage(
             actionButton("url_submit", "Submit URL"),
             textInput("akim_name_input", "Akim name", value = ""),
             textAreaInput("biography_input", "Enter biography:", value = "", rows = 20),
-            actionButton("bio_submit", "Submit biography"),
+            actionButton("bio_submit", "Submit biography")
         ),
         mainPanel(
             htmlOutput("gpt_response"),
