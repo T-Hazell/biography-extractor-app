@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev
 
 ## Install R libraries
-RUN R -e "install.packages(c('shiny', 'tidyverse', 'rvest', 'httr'))"
+RUN R -e "install.packages(c('shiny', 'tidyverse', 'rvest', 'httr'), repos = https://cran.rstudio.com/)"
 
 ## Copy Shiny application files
 COPY /bio-extractor /srv/shiny-server/
