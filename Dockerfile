@@ -14,7 +14,6 @@ RUN R -e "install.packages(c('shiny', 'tidyverse', 'rvest', 'httr'))"
 
 ## Copy Shiny application files
 COPY /app /srv/shiny-server/
-COPY /data /srv/shiny-server/data
 
 ## Grant access to server directory
 RUN sudo chown -R shiny:shiny /srv/shiny-server
