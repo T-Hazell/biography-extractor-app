@@ -48,3 +48,4 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 bio-extractor/api_key.txt
+.DS_Store

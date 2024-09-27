@@ -13,11 +13,11 @@ variables:
   dockerRegistryServiceConnection: '593edfbd-8b2f-40e9-b752-f2bb9e93f0df'
   imageRepository: 'thazellbiographyextractorapp'
   containerRegistry: 'kazakhstanle.azurecr.io'
-  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
+  dockerfilePath: '$(Build.SourcesDirectory)/.devcontainer/Dockerfile'
   tag: '$(Build.BuildId)'
 
   # Agent VM image name
-  vmImageName: 'ubuntu-latest'
+  vmImageName: 'ubuntu-22.04'
 
 stages:
 - stage: Build
