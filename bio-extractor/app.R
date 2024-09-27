@@ -21,7 +21,6 @@ CareerTextExtractor <- function(input) {
     return("No biography found")
 }
 
-
 AkimNameFinder <- function(input) {
     if (input != "No biography found" & length(input) != 0) {
         text_output <- input |>
