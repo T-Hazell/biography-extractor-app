@@ -206,26 +206,55 @@ GPTBiographyPrompter <- function(prompt, model) {
     httr::content(response)$choices[[1]]$message$content
 }
 
+instructions <-
+    "<small>
+<p>
+    This app is built to make the task of scraping, formatting, and checking akims' biographies easier. To use it:
+</p>
+
+<ol>
+    <li>
+        <strong>[Optional]</strong> Put the web address of a biography on <strong>gov.kz</strong> and click 'submit url'. The app scrapes the page
+        and attempts to separate the name and career sections for submission to the correct formatting model. It autofills the relevant
+        section with the text of these sections. This usually takes about 10 seconds.
+
+        <strong>Future tasks:</strong> Separate out the education section. Isolate akimat name.
+    </li>
+
+    <li>
+        Insert/check the biography and <strong>[optional]</strong> akim name into the input boxes, and click submit. Wait a little bit while our
+        fine-tuned GPT model tries to format the biography. If all goes well, the app reads in the GPT's response as a CSV and presents
+        it as a table, which can just be copy and pasted into Google Sheets. Please check the results!
+    </li>
+</ol>
+</small>
+"
+
 # Define UI for the Shiny app
 ui <- fluidPage(
-    titlePanel("Biography Extractor"),
+    titlePanel("Biography scraping and formatting interface"),
     sidebarLayout(
         sidebarPanel(
+            htmlOutput("instructions"),
             textInput("url", "Enter URL:", value = ""),
             actionButton("url_submit", "Submit URL"),
             textInput("akim_name_input", "Akim name", value = ""),
-            textAreaInput("biography_input", "Enter biography:", value = "", rows = 20),
+            textAreaInput("biography_input", "Enter career section of biography:*", value = "", rows = 20),
             actionButton("bio_submit", "Submit biography")
         ),
         mainPanel(
-            htmlOutput("gpt_response"),
-            tableOutput("gpt_table")
+            tableOutput("gpt_table"),
+            htmlOutput("gpt_response")
         )
     )
 )
 # Define server logic for the Shiny app
 server <- function(input, output, session) {
     akim_name_reactive <- reactiveVal(NULL)
+
+    output$instructions <- renderUI({
+        HTML(instructions)
+    })
 
     observeEvent(input$url_submit, {
         req(input$url)
@@ -277,11 +306,12 @@ server <- function(input, output, session) {
                 mutate(FIO = "", .before = 1)
         }
 
+output$gpt_table <- renderTable(gpt_table)
+
         output$gpt_response <- renderUI({
             HTML(paste0("<pre>", gpt_response, "</pre>"))
         })
 
-        output$gpt_table <- renderTable(gpt_table)
     })
 }
 
