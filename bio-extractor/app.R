@@ -1,12 +1,13 @@
 library(shiny)
 library(rvest)
 library(tidyverse)
-remotes::install_github("rstudio/chromote")
+remotes::install_github("rstudio/chromote@HEAD")
 library(curl)
+library(chromote)
 
 # Define the CareerTextExtractor function
 CareerTextExtractor <- function(input) {
-    if (input != "No biography found" & length(input) != 0) {
+    if (length(input) != 0) {
         text_output <- input |>
             rvest::read_html() |>
             rvest::html_elements(xpath = "//main") |>
@@ -24,7 +25,7 @@ CareerTextExtractor <- function(input) {
 }
 
 AkimNameFinder <- function(input) {
-    if (input != "No biography found" & length(input) != 0) {
+    if (length(input) != 0) {
         text_output <- input |>
             rvest::read_html() |>
             rvest::html_element("h2") |>
@@ -39,9 +40,9 @@ AkimNameFinder <- function(input) {
 
 # Define the LinkToCareerText function
 LinkToCareerText <- function(link) {
-    # Download the html of the link (requires chromote)
+
     page <- link |>
-        rvest::read_html_live()
+        read_html_live()
 
     # Wait, or rvest stops
     Sys.sleep(3)
@@ -53,16 +54,6 @@ LinkToCareerText <- function(link) {
 
     # Return the
     return(html_content)
-}
-
-# Function to apply CareerTextExtractor to saved HTML
-ExtractCareerText <- function(html_content) {
-    return(CareerTextExtractor(html_content))
-}
-
-# Function to apply AkimNameFinder to saved HTML
-ExtractAkimName <- function(html_content) {
-    return(AkimNameFinder(html_content))
 }
 
 system_prompt <- '
@@ -147,7 +138,6 @@ ui <- fluidPage(
             actionButton("bio_submit", "Submit biography")
         ),
         mainPanel(
-            textOutput("raw_html"),
             htmlOutput("gpt_response"),
             tableOutput("gpt_table")
         )
@@ -168,10 +158,8 @@ server <- function(input, output, session) {
             }
         )
       
-        output$raw_html <- renderText(as.character(html_content))
-
-        biography <- ExtractCareerText(html_content)
-        akim_name <- ExtractAkimName(html_content)
+        biography <- CareerTextExtractor(html_content)
+        akim_name <- AkimNameFinder(html_content)
 
         akim_name_reactive(akim_name)
 
