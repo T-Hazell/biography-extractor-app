@@ -85,7 +85,7 @@ GPTBiographyPrompter <- function(prompt, model) {
             Authorization = paste(
                 "Bearer",
                 # Private API key follows
-                readLines("bio-extractor/api_key.txt") #
+                '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'
             )
         ),
         # Content is JSON
