@@ -86,39 +86,6 @@ library(curl)
 #     ))
 # )
 
-# Define the CareerTextExtractor function
-CareerTextExtractor <- function(input) {
-    if (length(input) != 0) {
-        text_output <- input |>
-            rvest::read_html() |>
-            rvest::html_elements(xpath = "//main") |>
-            rvest::html_text() |>
-            paste(collapse = "\n")
-
-        if (stringr::str_detect(text_output, "Карьера")) {
-            text_output <- stringr::str_extract(text_output,
-                pattern = "Карьера\\s(?s).*"
-            )
-        }
-        return(text_output)
-    }
-    return("No biography found")
-}
-
-AkimNameFinder <- function(input) {
-    if (length(input) != 0) {
-        text_output <- input |>
-            rvest::read_html() |>
-            rvest::html_element("h2") |>
-            rvest::html_text()
-
-        if (!is.null(text_output) && str_count(text_output, "\\S+") == 3) {
-            return(text_output)
-        }
-    }
-    return("No name found")
-}
-
 # Define the LinkToCareerText function
 LinkToCareerText <- function(link) {
     page <- link |>
@@ -136,14 +103,70 @@ LinkToCareerText <- function(link) {
     return(html_content)
 }
 
+AkimNameFinder <- function(input) {
+    if (length(input) != 0) {
+        text_output <- input |>
+            rvest::read_html() |>
+            rvest::html_element("h2") |>
+            rvest::html_text()
+
+        if (!is.null(text_output) && str_count(text_output, "\\S+") == 3) {
+            return(text_output)
+        }
+    }
+    return("No name found")
+}
+
+# Define the CareerTextExtractor function
+CareerTextExtractor <- function(input) {
+    if (length(input) != 0) {
+        text_output <- input |>
+            rvest::read_html() |>
+            rvest::html_elements(xpath = "//main") |>
+            rvest::html_text() |>
+            paste(collapse = "\n")
+
+        if (stringr::str_detect(text_output, "Карьера")) {
+            text_output <- stringr::str_extract(text_output,
+                pattern = "Карьера\\s(?s).*"
+            )
+        }
+        return(text_output)
+    }
+    return(NA_character_)
+}
+
+BasicInformationTextExtractor <- function(input) {
+    if (length(input) != 0) {
+        text_output <- input |>
+            rvest::read_html() |>
+            rvest::html_elements(xpath = "//main") |>
+            rvest::html_text() |>
+            paste(collapse = "\n")
+
+        if (stringr::str_detect(text_output, "Карьера") & stringr::str_detect(text_output, "Общая информация, образование")) {
+            text_output <- stringr::str_extract(text_output,
+                pattern = "Общая информация, образование\\s(?s).*(?=Карьера)"
+            )
+
+            return(text_output)
+        } else {
+           return(NA_character_)
+        }
+
+    }
+    return(NA_character_)
+}
+
+
 system_prompt <- '
 You receive biographies and split them into individual positions. Return the split biographies in the following csv format:
 start_date, end_date, place_name, organisation, position, full_original_text
 "dd.mm.yyyy", "dd.mm.yyyy", "string", "string", "string", "string"
 "dd.mm.yyyy", "dd.mm.yyyy", "string", "string", "string", "string"
 
-For missing data, return "NA". If the month is not clear, dates should be "yyyy". For place_name, organisation, and position, return the original text. full_original_text is the full entry for that position. # nolint: line_length_linter.
-Do not geuss place if it is not explicitly state.
+For missing data, return "NA". If the month is not clear, dates should be "yyyy". For place_name, organisation, and position, return the original text. full_original_text is the full entry for that position. 
+Do not geuss place if it is not explicitly stated.
 '
 
 api_key <- read.table('/srv/shiny-server/bio-extractor/api_key.txt') |> 
@@ -243,6 +266,7 @@ ui <- fluidPage(
             actionButton("url_submit", "Submit URL"),
             textInput("akim_name_input", "Akim name", value = ""),
             textAreaInput("biography_input", "Enter career section of biography:*", value = "", rows = 20),
+            textAreaInput("basicinfo_input", "Enter basic information section of biography:", value = "", rows = 15),
             actionButton("bio_submit", "Submit biography")
         ),
         mainPanel(
@@ -271,17 +295,31 @@ server <- function(input, output, session) {
         )
 
         biography <- CareerTextExtractor(html_content)
+        if (is.na(biography)) {
+            biography <- "No biography found"
+        }
+
+        if (!is.na(biography) && str_detect(biography, "Карьера")) {
+            basic_info <- BasicInformationTextExtractor(html_content)
+
+            if (is.na(basic_info)) {
+                basic_info <- "No basic information and education section found, or it is included in the main biography section"
+            }
+        }
         akim_name <- AkimNameFinder(html_content)
 
         akim_name_reactive(akim_name)
 
         updateTextAreaInput(session, "biography_input", value = biography)
+        updateTextAreaInput(session, "basicinfo_input", value = basic_info)
         updateTextAreaInput(session, "akim_name_input", value = akim_name)
     })
 
     observeEvent(input$bio_submit, {
         req(input$biography_input)
-        gpt_response <- GPTBiographyPrompter(input$biography_input, model = "ft:gpt-4o-2024-08-06:personal:corrected-pilot-bio-work2:ABKpSsvl")
+        gpt_response <- GPTBiographyPrompter(input$biography_input,
+            model = "ft:gpt-4o-2024-08-06:personal:corrected-pilot-bio-work2:ABKpSsvl"
+        )
 
         gpt_table <- tryCatch(
             {
