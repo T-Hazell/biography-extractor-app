@@ -165,8 +165,8 @@ start_date, end_date, place_name, organisation, position, full_original_text
 "dd.mm.yyyy", "dd.mm.yyyy", "string", "string", "string", "string"
 "dd.mm.yyyy", "dd.mm.yyyy", "string", "string", "string", "string"
 
-For missing data, return "NA". If the month is not clear, dates should be "yyyy". For place_name, organisation, and position, return the original text. full_original_text is the full entry for that position. # nolint: line_length_linter.
-Do not geuss place if it is not explicitly state.
+For missing data, return "NA". If the month is not clear, dates should be "yyyy". For place_name, organisation, and position, return the original text. full_original_text is the full entry for that position. 
+Do not geuss place if it is not explicitly stated.
 '
 
 GPTBiographyPrompter <- function(prompt, model) {
@@ -314,7 +314,9 @@ server <- function(input, output, session) {
 
     observeEvent(input$bio_submit, {
         req(input$biography_input)
-        gpt_response <- GPTBiographyPrompter(input$biography_input, model = "ft:gpt-4o-2024-08-06:personal:corrected-pilot-bio-work2:ABKpSsvl")
+        gpt_response <- GPTBiographyPrompter(input$biography_input,
+            model = "ft:gpt-4o-2024-08-06:personal:corrected-pilot-bio-work2:ABKpSsvl"
+        )
 
         gpt_table <- tryCatch(
             {
