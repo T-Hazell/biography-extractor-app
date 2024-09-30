@@ -146,6 +146,9 @@ For missing data, return "NA". If the month is not clear, dates should be "yyyy"
 Do not geuss place if it is not explicitly state.
 '
 
+api_key <- read.table('/srv/shiny-server/bio-extractor/api_key.txt') |> 
+    as.character()
+
 GPTBiographyPrompter <- function(prompt, model) {
     # Response is the raw JSON returned by the API
     response <- httr::RETRY(
@@ -157,7 +160,7 @@ GPTBiographyPrompter <- function(prompt, model) {
             Authorization = paste(
                 "Bearer",
                 # Private API key follows
-                "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"
+              api_key
             )
         ),
         # Content is JSON
