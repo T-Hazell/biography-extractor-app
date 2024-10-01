@@ -86,6 +86,9 @@ library(curl)
 #     ))
 # )
 
+api_key <- read.table("bio-extractor/api_key.txt") |>
+    as.character()
+
 # Define the LinkToCareerText function
 LinkToCareerText <- function(link) {
     page <- link |>
@@ -99,12 +102,12 @@ LinkToCareerText <- function(link) {
         rvest::html_elements(xpath = "//main") |>
         as.character()
 
-    # Return the
+    # Return the content
     return(html_content)
 }
 
 AkimNameFinder <- function(input) {
-    if (length(input) != 0) {
+    if (length(input) != 0 && input != "No biography found") {
         text_output <- input |>
             rvest::read_html() |>
             rvest::html_element("h2") |>
@@ -119,7 +122,7 @@ AkimNameFinder <- function(input) {
 
 # Define the CareerTextExtractor function
 CareerTextExtractor <- function(input) {
-    if (length(input) != 0) {
+    if (length(input) != 0 && input != "No biography found") {
         text_output <- input |>
             rvest::read_html() |>
             rvest::html_elements(xpath = "//main") |>
@@ -137,12 +140,12 @@ CareerTextExtractor <- function(input) {
 }
 
 BasicInformationTextExtractor <- function(input) {
-    if (!is.na(input) & length(input) != 0) {
+    if (!is.na(input) & length(input) != 0  && input != "No biography found") {
         text_output <- input |>
             rvest::read_html() |>
             rvest::html_elements(xpath = "//main") |>
             rvest::html_text() |>
-                paste(collapse = "\n")
+            paste(collapse = "\n")
 
         if (stringr::str_detect(text_output, "Карьера") & stringr::str_detect(text_output, "Общая информация, образование")) {
             text_output <- stringr::str_extract(text_output,
@@ -151,13 +154,11 @@ BasicInformationTextExtractor <- function(input) {
 
             return(text_output)
         } else {
-           return(NA_character_)
+            return(NA_character_)
         }
-
     }
     return(NA_character_)
 }
-
 
 system_prompt_work <- '
 You receive biographies and split them into individual positions. Return the split biographies in the following csv format:
@@ -165,7 +166,7 @@ start_date, end_date, place_name, organisation, position, full_original_text
 "dd.mm.yyyy", "dd.mm.yyyy", "string", "string", "string", "string"
 "dd.mm.yyyy", "dd.mm.yyyy", "string", "string", "string", "string"
 
-For missing data, return "NA". If the month is not clear, dates should be "yyyy". For place_name, organisation, and position, return the original text. full_original_text is the full entry for that position. 
+For missing data, return "NA". If the month is not clear, dates should be "yyyy". For place_name, organisation, and position, return the original text. full_original_text is the full entry for that position.
 Do not geuss place if it is not explicitly stated.
 '
 
@@ -176,9 +177,6 @@ start_date, end_date, place_name, organisation, position, full_original_text
 
 For missing data, return "NA". For place_name and organisation return the original text. For position, return "Студент", with the speciality in brackets, if given. full_original_text is the full entry for that position.
 Do not geuss place if it is not explicitly stated.'
-
-api_key <- read.table('bio-extractor/api_key.txt') |> 
-    as.character()
 
 GPTBiographyPrompter <- function(prompt, system, model) {
     # Response is the raw JSON returned by the API
@@ -191,7 +189,7 @@ GPTBiographyPrompter <- function(prompt, system, model) {
             Authorization = paste(
                 "Bearer",
                 # Private API key follows
-              api_key
+                api_key
             )
         ),
         # Content is JSON
@@ -310,11 +308,13 @@ server <- function(input, output, session) {
             biography <- "No biography found"
         }
 
+        basic_info <- ""
+
         if (!is.na(biography) && str_detect(biography, "Карьера")) {
             basic_info <- BasicInformationTextExtractor(html_content)
 
             if (is.na(basic_info)) {
-                basic_info <- "No basic information and education section found, or it is included in the main biography section"
+                basic_info <- ""
             }
         }
         akim_name <- AkimNameFinder(html_content)
@@ -385,7 +385,7 @@ server <- function(input, output, session) {
                 mutate(FIO = "", .before = 1)
         }
 
-output$gpt_table <- renderTable(gpt_table)
+        output$gpt_table <- renderTable(gpt_table)
 
         output$gpt_response <- renderUI({
             HTML(paste0(
@@ -393,7 +393,6 @@ output$gpt_table <- renderTable(gpt_table)
                 "<pre>", gpt_response_study, "</pre>"
             ))
         })
-
     })
 }
 
