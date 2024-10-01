@@ -137,12 +137,12 @@ CareerTextExtractor <- function(input) {
 }
 
 BasicInformationTextExtractor <- function(input) {
-    if (length(input) != 0) {
+    if (!is.na(input) & length(input) != 0) {
         text_output <- input |>
             rvest::read_html() |>
             rvest::html_elements(xpath = "//main") |>
             rvest::html_text() |>
-            paste(collapse = "\n")
+                paste(collapse = "\n")
 
         if (stringr::str_detect(text_output, "Карьера") & stringr::str_detect(text_output, "Общая информация, образование")) {
             text_output <- stringr::str_extract(text_output,
@@ -169,7 +169,7 @@ For missing data, return "NA". If the month is not clear, dates should be "yyyy"
 Do not geuss place if it is not explicitly stated.
 '
 
-api_key <- read.table('/srv/shiny-server/bio-extractor/api_key.txt') |> 
+api_key <- read.table('bio-extractor/api_key.txt') |> 
     as.character()
 
 GPTBiographyPrompter <- function(prompt, model) {
