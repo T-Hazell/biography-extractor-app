@@ -320,17 +320,18 @@ instructions <-
 
 <ol>
     <li>
-        <strong>[Optional]</strong> Put the web address of a biography on <strong>gov.kz</strong> and click 'submit url'. The app scrapes the page
-        and attempts to separate the name and career sections for submission to the correct formatting model. It tries to autofill the relevant
-        section with the text of these sections. This usually takes about 10 seconds. If the biography does not match the typical patterns of a biography page,
-        it inserts all the text into the top input box and you'll have to seperate it manually.
+        <strong>[Optional]</strong> Paste in the web address of a biography on <strong>gov.kz</strong> or <strong>yandexwebcache.net</strong>
+        (for other links, it may fail to extract text or split it into sections) and click 'submit url'. The app scrapes the page and
+        attempts to separate the name, career, and education sections for submission to the correct formatting model. It tries to 
+        autofill the relevant section with the text of these sections. This usually takes about 10 seconds. If the biography does not
+        match the typical patterns of a biography page, it inserts all the text into the top input box and you'll have to seperate it manually.
     </li>
 
     <li>
         Insert/check the biography and <strong>[optional]</strong> akim name into the input boxes, and click submit. Wait a little bit while our
-        fine-tuned GPT models try to format the biography. The 'career' box is sent to the GPT trained on work entries. The 'basic info/education' box sends
-        it to the GPT trained on study entries. If all goes well, the app reads in the GPT's response as a CSV and presents
-        it as a table, which can just be copy and pasted into Google Sheets. Please check the results!
+        fine-tuned openAI models try to format the biography. The 'career' box is sent to the model trained on work entries. The 'basic
+        info/education' box sends it to the model trained on study entries. If all goes well, the app reads in the model's response as a CSV
+        and presents it as a table, which can just be copy and pasted into Google Sheets. Please check the results!
     </li>
 </ol>
 <p>
