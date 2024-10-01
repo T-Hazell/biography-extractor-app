@@ -159,7 +159,7 @@ BasicInformationTextExtractor <- function(input) {
 }
 
 
-system_prompt <- '
+system_prompt_work <- '
 You receive biographies and split them into individual positions. Return the split biographies in the following csv format:
 start_date, end_date, place_name, organisation, position, full_original_text
 "dd.mm.yyyy", "dd.mm.yyyy", "string", "string", "string", "string"
@@ -169,10 +169,18 @@ For missing data, return "NA". If the month is not clear, dates should be "yyyy"
 Do not geuss place if it is not explicitly stated.
 '
 
+system_prompt_study <- 'You receive biographies and split them into individual educational experiences. Only consider study at higher education institutions, not any work experience. Return the split biographies in the following csv format:
+start_date, end_date, place_name, organisation, position, full_original_text
+"dd.mm.yyyy", "dd.mm.yyyy", "string", "string", "string", "string"
+"dd.mm.yyyy", "dd.mm.yyyy", "string", "string", "string", "string"
+
+For missing data, return "NA". For place_name and organisation return the original text. For position, return "Студент", with the speciality in brackets, if given. full_original_text is the full entry for that position.
+Do not geuss place if it is not explicitly stated.'
+
 api_key <- read.table('bio-extractor/api_key.txt') |> 
     as.character()
 
-GPTBiographyPrompter <- function(prompt, model) {
+GPTBiographyPrompter <- function(prompt, system, model) {
     # Response is the raw JSON returned by the API
     response <- httr::RETRY(
         "POST",
@@ -196,7 +204,7 @@ GPTBiographyPrompter <- function(prompt, model) {
             temperature = 1,
             # Instructions to the server
             messages = list(
-                list(role = "system", content = system_prompt),
+                list(role = "system", content = system),
                 list(role = "user", content = prompt)
             )
         ),
@@ -241,18 +249,21 @@ instructions <-
 <ol>
     <li>
         <strong>[Optional]</strong> Put the web address of a biography on <strong>gov.kz</strong> and click 'submit url'. The app scrapes the page
-        and attempts to separate the name and career sections for submission to the correct formatting model. It autofills the relevant
-        section with the text of these sections. This usually takes about 10 seconds.
-
-        <strong>Future tasks:</strong> Separate out the education section. Isolate akimat name.
+        and attempts to separate the name and career sections for submission to the correct formatting model. It tries to autofill the relevant
+        section with the text of these sections. This usually takes about 10 seconds. If the biography does not match the typical patterns of a biography page,
+        it inserts all the text into the top input box and you'll have to seperate it manually.
     </li>
 
     <li>
         Insert/check the biography and <strong>[optional]</strong> akim name into the input boxes, and click submit. Wait a little bit while our
-        fine-tuned GPT model tries to format the biography. If all goes well, the app reads in the GPT's response as a CSV and presents
+        fine-tuned GPT models try to format the biography. The 'career' box is sent to the GPT trained on work entries. The 'basic info/education' box sends
+        it to the GPT trained on study entries. If all goes well, the app reads in the GPT's response as a CSV and presents
         it as a table, which can just be copy and pasted into Google Sheets. Please check the results!
     </li>
 </ol>
+<p>
+    <strong>Future tasks:</strong> Isolate akimat name. Fine-tune/include models for birth date, military service.
+</p>
 </small>
 "
 
@@ -265,8 +276,8 @@ ui <- fluidPage(
             textInput("url", "Enter URL:", value = ""),
             actionButton("url_submit", "Submit URL"),
             textInput("akim_name_input", "Akim name", value = ""),
-            textAreaInput("biography_input", "Enter career section of biography:*", value = "", rows = 20),
-            textAreaInput("basicinfo_input", "Enter basic information section of biography:", value = "", rows = 15),
+            textAreaInput("biography_input", "Enter career (Карьера) section of biography:", value = "", rows = 20),
+            textAreaInput("basicinfo_input", "Enter basic information/education (Общая информация, образование) section of biography:", value = "", rows = 15),
             actionButton("bio_submit", "Submit biography")
         ),
         mainPanel(
@@ -317,21 +328,48 @@ server <- function(input, output, session) {
 
     observeEvent(input$bio_submit, {
         req(input$biography_input)
-        gpt_response <- GPTBiographyPrompter(input$biography_input,
+
+        gpt_response_work <- GPTBiographyPrompter(input$biography_input,
+            system = system_prompt_work,
             model = "ft:gpt-4o-2024-08-06:personal:corrected-pilot-bio-work2:ABKpSsvl"
         )
 
+        if (nzchar(input$basicinfo_input)) {
+            gpt_response_study <- GPTBiographyPrompter(input$basicinfo_input,
+                system = system_prompt_study,
+                model = "ft:gpt-4o-2024-08-06:personal:pilot-bio-study:ADC2E7TU"
+            )
+        } else {
+            gpt_response_study <- NA_character_
+        }
+
         gpt_table <- tryCatch(
             {
-                read_csv(gpt_response, show_col_types = FALSE)
+                read_csv(gpt_response_work, show_col_types = FALSE)
             },
             error = function(e) {
-                return(data.frame(Error = "Invalid CSV format"))
+                return(data.frame(Error = "Invalid CSV format returned for work section."))
             }
         )
 
         gpt_table <- gpt_table |>
             mutate(event = "work", .before = 1)
+
+        if (!is.na(gpt_response_study)) {
+            gpt_table_study <- tryCatch(
+                {
+                    read_csv(gpt_response_study, show_col_types = FALSE)
+                },
+                error = function(e) {
+                    return(data.frame(Error = "Invalid CSV format returned for study section."))
+                }
+            )
+
+            gpt_table_study <- gpt_table_study |>
+                mutate(event = "study", .before = 1)
+
+            gpt_table <- rbind(gpt_table_study, gpt_table)
+        }
 
         if (is.null(akim_name_reactive())) {
             akim_name_reactive(input$akim_name_input)
@@ -350,7 +388,10 @@ server <- function(input, output, session) {
 output$gpt_table <- renderTable(gpt_table)
 
         output$gpt_response <- renderUI({
-            HTML(paste0("<pre>", gpt_response, "</pre>"))
+            HTML(paste0(
+                "<pre>", gpt_response_work, "</pre>",
+                "<pre>", gpt_response_study, "</pre>"
+            ))
         })
 
     })
