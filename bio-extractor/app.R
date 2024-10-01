@@ -86,6 +86,7 @@ library(curl)
 #     ))
 # )
 
+# Read the API key from a file
 api_key <- read.table("bio-extractor/api_key.txt") |>
     as.character()
 
@@ -95,39 +96,109 @@ LinkToCareerText <- function(link) {
         read_html_live()
 
     # Wait, or rvest stops
-    Sys.sleep(3)
+    Sys.sleep(2)
 
-    html_content <- page |>
-        rvest::html_element("div") |>
-        rvest::html_elements(xpath = "//main") |>
-        as.character()
+# TODO: Clean string for conditionals
 
-    # Return the content
-    return(html_content)
+    # Main gov.kz case
+    if (str_starts(link, "https://www.gov.kz/")) {
+        html_content <- page |>
+            rvest::html_element("div") |>
+            rvest::html_elements(xpath = "//main") 
+
+        # Yandex case
+    } else if (str_starts(link, "https://yandexwebcache.net/")) {
+        
+        html_content <- page |>
+            rvest::html_elements("div")
+
+        # Other cases
+    } else {
+        html_content <- page |>
+            rvest::html_element("main")
+    }
+
+html_content <- html_content |> 
+    as.character() |> 
+    paste0(collapse = "") # Ensures that element*s* are not returned as a list
+    #' This code is horrible-ish, but rvest does not (consistently) preserve the
+    #' structure of the nodeset, and this is one way to keep it.
+    #' Read back in with rvest::read_html().
+
+# Return the content
+return(html_content)
 }
 
+# Define the CheckForYandexHeaderTell function
+CheckForYandexHeaderTell <- function(input) {
+    # Scrape the first div element
+    first_div <- input |>
+        rvest::read_html() |>
+        rvest::html_element("div")
+
+    # Check if the id attribute of the first div is "yandex-cache-hdr"
+    id_attr <- rvest::html_attr(first_div, "id")
+
+    if (is.na(id_attr)) {
+        id_attr <- FALSE
+    }
+
+    return(!is.null(first_div) && !is.na(id_attr) && id_attr == "yandex-cache-hdr")
+}
+
+# Define the AkimNameFinder function
 AkimNameFinder <- function(input) {
     if (length(input) != 0 && input != "No biography found") {
-        text_output <- input |>
-            rvest::read_html() |>
-            rvest::html_element("h2") |>
-            rvest::html_text()
+        
+        if (CheckForYandexHeaderTell(input)) {
+            
+            text_output <- input |>
+                rvest::read_html() |>
+                rvest::html_element("div[style='position:relative']") |>
+                rvest::html_element("meta[property='og:title']") |>
+                rvest::html_attr("content")
+            
+        } else {
+            text_output <- input |>
+                rvest::read_html() |>
+                rvest::html_element("h2") |>
+                rvest::html_text()
 
-        if (!is.null(text_output) && str_count(text_output, "\\S+") == 3) {
-            return(text_output)
+            if (is.null(text_output) || str_count(text_output, "\\S+") != 3) {
+                text_output <- "No name found"
+            }
         }
+    } else {
+        text_output <- "No name found"
     }
-    return("No name found")
+
+    return(text_output)
 }
 
-# Define the CareerTextExtractor function
-CareerTextExtractor <- function(input) {
-    if (length(input) != 0 && input != "No biography found") {
+# Define the MainTextExtractor function
+MainTextExtractor <- function(input) {
+    if (CheckForYandexHeaderTell(input)) {
+        text_output <- input |>
+            rvest::read_html() |>
+            rvest::html_element("div[style='position:relative']") |>
+            rvest::html_text() |>
+            paste(collapse = "\n")
+    } else {
         text_output <- input |>
             rvest::read_html() |>
             rvest::html_elements(xpath = "//main") |>
             rvest::html_text() |>
             paste(collapse = "\n")
+    }
+
+    return(text_output)
+}
+
+# Define the CareerTextExtractor function
+CareerTextExtractor <- function(input) {
+    if (length(input) != 0 && input != "No biography found") {
+        
+        text_output <- MainTextExtractor(input)
 
         if (stringr::str_detect(text_output, "Карьера")) {
             text_output <- stringr::str_extract(text_output,
@@ -135,29 +206,31 @@ CareerTextExtractor <- function(input) {
             )
         }
         return(text_output)
-    }
+    } else{
     return(NA_character_)
+    }
 }
 
+# Define the BasicInformationTextExtractor function
 BasicInformationTextExtractor <- function(input) {
-    if (!is.na(input) & length(input) != 0  && input != "No biography found") {
-        text_output <- input |>
-            rvest::read_html() |>
-            rvest::html_elements(xpath = "//main") |>
-            rvest::html_text() |>
-            paste(collapse = "\n")
+    if (length(input) != 0 && input != "No biography found") {
+        
+        text_output <- MainTextExtractor(input)
 
         if (stringr::str_detect(text_output, "Карьера") & stringr::str_detect(text_output, "Общая информация, образование")) {
-            text_output <- stringr::str_extract(text_output,
+          
+            BI_text <- stringr::str_extract(text_output,
                 pattern = "Общая информация, образование\\s(?s).*(?=Карьера)"
             )
 
-            return(text_output)
+            return(BI_text)
+
         } else {
             return(NA_character_)
         }
-    }
+    } else {
     return(NA_character_)
+    }
 }
 
 system_prompt_work <- '
@@ -178,6 +251,7 @@ start_date, end_date, place_name, organisation, position, full_original_text
 For missing data, return "NA". For place_name and organisation return the original text. For position, return "Студент", with the speciality in brackets, if given. full_original_text is the full entry for that position.
 Do not geuss place if it is not explicitly stated.'
 
+# Define the GPTBiographyPrompter function
 GPTBiographyPrompter <- function(prompt, system, model) {
     # Response is the raw JSON returned by the API
     response <- httr::RETRY(
