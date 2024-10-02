@@ -32,6 +32,15 @@
 # - Sends the extracted sections to the OpenAI API for formatting.
 # - Displays the formatted biography table and raw GPT responses.
 
+#' TODO:
+#' - Fine-tune model on birth place
+#' - Fine-tune model on military service
+#' - Isolate (fine-tune model on?) akimat name
+#' - Link cleaning before checks
+#' - Add a 'loading' spinner
+#' - Add a 'copy to clipboard' button
+#' - Server-side improvements
+
 # Preamble ----
 
 library(shiny)
@@ -39,6 +48,7 @@ library(rvest)
 library(tidyverse)
 library(chromote)
 library(curl)
+library(reticulate)
 
 # These rows are required for running on a deployed shiny server :)
 # Sys.setenv(CHROMOTE_CHROME = "/srv/shiny-server/bio-extractor/chrome/linux-129.0.6668.70/chrome-linux64/chrome")
@@ -59,6 +69,10 @@ api_key <- read.table("bio-extractor/api_key.txt") |>
     as.character()
 
 # Functions ----
+
+# Import to_nominative from Python
+use_virtualenv("r-reticulate")
+source_python("bio-extractor/to_nominative.py")
 
 # Define the LinkToCareerText function
 #' Extracts and returns the HTML content from a given link.
@@ -315,7 +329,6 @@ BirthDateExtractor <- function(input) {
 #' It searches for specific birthday-related terms and patterns within the input text.
 #'
 #' @param input A character string containing the text to be searched for birth date information.
-#'
 #' @return A character string containing the extracted birth date information if found, otherwise NA.
 BirthDateTextExtractor <- function(input) {
     birthday_terms <- c("Дата рождения", "родился", "родилась", "родился в", "родилась в")
@@ -332,17 +345,29 @@ BirthDateTextExtractor <- function(input) {
     }
 }
 
+# Define the AkimatNameExtractor function
+AkimatNameExtractor <- function(input, akim_name) {
+    text_output <- MainTextExtractor(input)
+
+    raw_placename <- str_extract(text_output, regex(paste0("(?<=", akim_name, "\n\\s{0,1}Аким)[\\w\\s,]+?(?=\\n)"), ignore_case = TRUE))
+
+    if (!is.na(raw_placename)) {
+        nominative_placename <- to_nominative_sentence(raw_placename)
+        return(nominative_placename)
+    } else {
+        return(NA_character_)
+    }
+}
+
 # Define the GPTBiographyPrompter function
-#
-# This function sends a prompt to the OpenAI API and retrieves a response.
-# It handles rate limiting by checking the number of remaining requests and tokens,
-# and waits if they are below a certain threshold.
-#
-# @param prompt A string containing the user's prompt to be sent to the API.
-# @param system A string containing the system's instructions for the API.
-# @param model A string specifying the model type (e.g., "gpt-3.5-turbo", "gpt-4o").
-#
-# @return A string containing the content of the response from the OpenAI API.
+#' This function sends a prompt to the OpenAI API and retrieves a response.
+#' It handles rate limiting by checking the number of remaining requests and tokens,
+#' and waits if they are below a certain threshold.
+#'
+#' @param prompt A string containing the user's prompt to be sent to the API.
+#' @param system A string containing the system's instructions for the API.
+#' @param model A string specifying the model type (e.g., "gpt-3.5-turbo", "gpt-4o").
+#' @return A string containing the content of the response from the OpenAI API.
 GPTBiographyPrompter <- function(prompt, system, model) {
     # Response is the raw JSON returned by the API
     response <- httr::RETRY(
@@ -405,15 +430,13 @@ GPTBiographyPrompter <- function(prompt, system, model) {
 
 # GPT model set-up ----
 
-system_prompt_work <- '
-You receive biographies and split them into individual positions. Return the split biographies in the following csv format:
+system_prompt_work <- 'You receive biographies and split them into individual positions. Return the split biographies in the following csv format:
 start_date, end_date, place_name, organisation, position, full_original_text
 "dd.mm.yyyy", "dd.mm.yyyy", "string", "string", "string", "string"
 "dd.mm.yyyy", "dd.mm.yyyy", "string", "string", "string", "string"
 
 For missing data, return "NA". If the month is not clear, dates should be "yyyy". For place_name, organisation, and position, return the original text. full_original_text is the full entry for that position.
-Do not geuss place if it is not explicitly stated.
-'
+Do not geuss place if it is not explicitly stated.'
 
 system_prompt_study <- 'You receive biographies and split them into individual educational experiences. Only consider study at higher education institutions, not any work experience. Return the split biographies in the following csv format:
 start_date, end_date, place_name, organisation, position, full_original_text
@@ -458,9 +481,9 @@ instructions <-
 
 # Define UI for the Shiny app
 ui <- fluidPage(
-# Page title
+    # Page title
     titlePanel("Biography scraping and formatting interface"),
-# Sidebar, with instructions and inpiut boxes
+    # Sidebar, with instructions and inpiut boxes
     sidebarLayout(
         sidebarPanel(
             htmlOutput("instructions"),
@@ -472,7 +495,7 @@ ui <- fluidPage(
             textAreaInput("basicinfo_input", "Enter basic information/education (Общая информация, образование) section of biography:", value = "", rows = 15),
             actionButton("bio_submit", "Submit biography")
         ),
-# Main panel, to display outputs (formatted biography table and raw GPT responses)
+        # Main panel, to display outputs (formatted biography table and raw GPT responses)
         mainPanel(
             tableOutput("gpt_table"),
             htmlOutput("gpt_response")
@@ -495,7 +518,7 @@ server <- function(input, output, session) {
     observeEvent(input$url_submit, {
         # Check there is actually a url in the input before proceeding
         req(input$url)
-# Attempt to store the url's html content
+        # Attempt to store the url's html content
         html_content <- tryCatch(
             {
                 LinkToCareerText(input$url)
@@ -508,7 +531,7 @@ server <- function(input, output, session) {
 
         # Extract the 'career' section, or the whole biography if no career section is found
         biography <- CareerTextExtractor(html_content)
-#  If there's nothing at all, return "No biography found"
+        #  If there's nothing at all, return "No biography found"
         if (is.na(biography)) {
             biography <- "No biography found"
         }
@@ -525,32 +548,32 @@ server <- function(input, output, session) {
                 basic_info <- ""
             }
         }
-# Extract the akim's name
+        # Extract the akim's name
         akim_name <- AkimNameFinder(html_content)
 
         # Update the reactive variable
         akim_name_reactive(akim_name)
 
-# Extract the akim's birth date
-if (basic_info != "") {
-    # Run the functions on the basic info section, if it exists
-    akim_birth_date <- BirthDateExtractor(basic_info)
-    akim_birth_date_text <- BirthDateTextExtractor(basic_info)
+        # Extract the akim's birth date
+        if (basic_info != "") {
+            # Run the functions on the basic info section, if it exists
+            akim_birth_date <- BirthDateExtractor(basic_info)
+            akim_birth_date_text <- BirthDateTextExtractor(basic_info)
 
-    # Update the reactive variables
-    akim_birth_date_reactive(akim_birth_date)
-    akim_birth_date_text_reactive(akim_birth_date_text)
-} else {
-    # If it doesn't exist, run them on the biography section
-    akim_birth_date <- BirthDateExtractor(biography)
-    akim_birth_date_text <- BirthDateTextExtractor(biography)
+            # Update the reactive variables
+            akim_birth_date_reactive(akim_birth_date)
+            akim_birth_date_text_reactive(akim_birth_date_text)
+        } else {
+            # If it doesn't exist, run them on the biography section
+            akim_birth_date <- BirthDateExtractor(biography)
+            akim_birth_date_text <- BirthDateTextExtractor(biography)
 
-    # Update the reactive variables
-    akim_birth_date_reactive(akim_birth_date)
-    akim_birth_date_text_reactive(akim_birth_date_text)
-}
+            # Update the reactive variables
+            akim_birth_date_reactive(akim_birth_date)
+            akim_birth_date_text_reactive(akim_birth_date_text)
+        }
 
-# Update the input boxes with the extracted text
+        # Update the input boxes with the extracted text
         updateTextAreaInput(session, "biography_input", value = biography)
         updateTextAreaInput(session, "basicinfo_input", value = basic_info)
         updateTextAreaInput(session, "akim_name_input", value = akim_name)
@@ -593,7 +616,7 @@ if (basic_info != "") {
         # Add an 'event' column to the table, set it to work for the career section
         gpt_table <- gpt_table |>
             mutate(event = "work", .before = 1) |>
-                mutate_all(as.character)
+            mutate_all(as.character)
 
         # Try there was a study section, try to read the study model responses as a csv
         if (!is.na(gpt_response_study)) {
@@ -609,7 +632,7 @@ if (basic_info != "") {
             # Add an 'event' column to the table, set it to study for the study section
             gpt_table_study <- gpt_table_study |>
                 mutate(event = "study", .before = 1) |>
-                    mutate_all(as.character)
+                mutate_all(as.character)
 
             # Add the study section to the main table
             gpt_table <- bind_rows(gpt_table_study, gpt_table)
