@@ -10,7 +10,10 @@ def to_nominative(word, gender = 'masc'):
         return word  # Already in nominative case
     nominative_form = parsed_word.inflect({'nomn', gender})
     if nominative_form:
-        return nominative_form.word
+        result_word = nominative_form.word
+        if word[0].isupper():
+            result_word = result_word.capitalize()
+        return result_word
     return word  # Return the original word if nominative form is not found
 
 def to_nominative_sentence(sentence):
