@@ -359,6 +359,33 @@ AkimatNameExtractor <- function(input, akim_name) {
     }
 }
 
+link <- "https://www.gov.kz/memleket/entities/mangystau-beyneu-eset/about/structure/people/40519?lang=ru"
+input <- LinkToCareerText(link = link)
+akim_name <- AkimNameFinder(input)
+
+AkimatNameExtractor(input, akim_name)
+
+ATDFromLink <- function(link) {
+    if (stringr::str_detect(link, "gov.kz")) {
+        three_phase <- stringr::str_extract(
+            link,
+            pattern = "(?<=https://www.gov.kz/memleket/entities/).*?(?=/about/structure/people/)"
+        )
+
+        if (stringr::str_detect(three_phase, "\\w+-\\w+-\\w+")) {
+            three_phase <- stringr::str_replace_all(three_phase, pattern = "-", " ")
+            oblast <- stringr::str_split_i(three_phase, pattern = " ", 1)
+            rayon <- stringr::str_split_i(three_phase, pattern = " ", 2)
+            subdistrict <- stringr::str_split_i(three_phase, pattern = " ", 3)
+
+            results <- list("oblast" = oblast, "rayon" = rayon, "subdistrict" = subdistrict)
+        }
+
+        return(results)
+    }
+}
+tr <- ATDFromLink(link)
+
 # Define the GPTBiographyPrompter function
 #' This function sends a prompt to the OpenAI API and retrieves a response.
 #' It handles rate limiting by checking the number of remaining requests and tokens,
