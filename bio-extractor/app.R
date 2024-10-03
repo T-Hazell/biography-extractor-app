@@ -52,7 +52,7 @@ library(reticulate)
 
 # These rows are required for running on a deployed shiny server :)
 # Sys.setenv(CHROMOTE_CHROME = "/srv/shiny-server/bio-extractor/chrome/linux-129.0.6668.70/chrome-linux64/chrome")
-
+#
 # chromote::set_default_chromote_object(
 #     chromote::Chromote$new(chromote::Chrome$new(
 #         args = c(
@@ -70,9 +70,9 @@ api_key <- read.table("bio-extractor/api_key.txt") |>
 
 # Functions ----
 
-# Import to_nominative from Python
+# Import to_case from Python
 use_virtualenv("r-reticulate")
-source_python("bio-extractor/to_nominative.py")
+source_python("bio-extractor/to_case.py")
 
 # Define the LinkToCareerText function
 #' Extracts and returns the HTML content from a given link.
@@ -352,39 +352,96 @@ AkimatNameExtractor <- function(input, akim_name) {
     raw_placename <- str_extract(text_output, regex(paste0("(?<=", akim_name, "\n\\s{0,1}Аким)[\\w\\s,]+?(?=\\n)"), ignore_case = TRUE))
 
     if (!is.na(raw_placename)) {
-        nominative_placename <- to_nominative_sentence(raw_placename)
+        nominative_placename <- to_case_sentence(raw_placename)
         return(nominative_placename)
     } else {
         return(NA_character_)
     }
 }
 
-link <- "https://www.gov.kz/memleket/entities/mangystau-beyneu-eset/about/structure/people/40519?lang=ru"
 input <- LinkToCareerText(link = link)
 akim_name <- AkimNameFinder(input)
 
 AkimatNameExtractor(input, akim_name)
 
+cleaned_comb_dictionary <- read_csv("cleaned_comb_dictionary.csv", show_col_types = FALSE)
+oblast_list1 <- cleaned_comb_dictionary |>
+    distinct(embedded_oblast) |>
+    filter(!is.na(embedded_oblast) &
+        embedded_oblast != "sauran" &
+        embedded_oblast != "akimat")
+
+oblast_list <- cleaned_comb_dictionary |>
+    distinct(oblast_name) |>
+    rename(embedded_oblast = oblast_name) |>
+    bind_rows(oblast_list1) |>
+    distinct(embedded_oblast) |>
+    pull(embedded_oblast)
+
+oblast_list <- c(oblast_list, "kostanai")
+
 ATDFromLink <- function(link) {
+    tp_split <- list("oblast" = NA_character_, "rayon" = NA_character_, "subdistrict" = NA_character_)
+
     if (stringr::str_detect(link, "gov.kz")) {
-        three_phase <- stringr::str_extract(
+        entity <- stringr::str_extract(
             link,
             pattern = "(?<=https://www.gov.kz/memleket/entities/).*?(?=/about/structure/people/)"
         )
 
-        if (stringr::str_detect(three_phase, "\\w+-\\w+-\\w+")) {
-            three_phase <- stringr::str_replace_all(three_phase, pattern = "-", " ")
+        if (stringr::str_detect(entity, "\\w+-\\w+-\\w+")) {
+            # Three part pattern case
+            three_phase <- stringr::str_replace_all(entity, pattern = "-", " ")
             oblast <- stringr::str_split_i(three_phase, pattern = " ", 1)
             rayon <- stringr::str_split_i(three_phase, pattern = " ", 2)
             subdistrict <- stringr::str_split_i(three_phase, pattern = " ", 3)
 
-            results <- list("oblast" = oblast, "rayon" = rayon, "subdistrict" = subdistrict)
+            tp_split <- list("oblast" = oblast, "rayon" = rayon, "subdistrict" = subdistrict)
+        } else if (stringr::str_detect(entity, "\\w+-\\w+")) {
+            # Two part pattern case
+            two_phase <- stringr::str_replace_all(entity, pattern = "-", " ")
+
+            if (stringr::str_split_i(two_phase, pattern = " ", 1) %in% oblast_list) {
+                oblast <- stringr::str_split_i(two_phase, pattern = " ", 1)
+                rayon <- stringr::str_split_i(two_phase, pattern = " ", 2)
+                subdistrict <- NA_character_
+
+                tp_split <- list("oblast" = oblast, "rayon" = rayon, "subdistrict" = NA_character_)
+            }
         }
 
-        return(results)
+        dictionary_row <- filter(cleaned_comb_dictionary, embedded_rayon == rayon & oblast_name == oblast)
+
+        rayon_proper <- dictionary_row |>
+            pull(rayon_name_proper)
+
+        if (length(rayon_proper) != 0) {
+            tp_split$rayon <- rayon_proper
+        }
+
+        oblast_proper <- dictionary_row |>
+            pull(oblast_name_proper)
+
+        if (length(oblast_proper) != 0) {
+            tp_split$oblast <- oblast_proper
+        }
     }
+    return(tp_split)
 }
-tr <- ATDFromLink(link)
+link <- "https://www.gov.kz/memleket/entities/bko-kaztalovka/about/structure/people/4953?lang=ru"
+
+ATDFromLink(link)
+
+
+
+length(filter(oblast_structure_urls, entity_text == "dmikdf") |>
+    pull(entity_name))
+
+
+
+
+
+
 
 # Define the GPTBiographyPrompter function
 #' This function sends a prompt to the OpenAI API and retrieves a response.
