@@ -35,11 +35,11 @@
 #' TODO:
 #' - Fine-tune model on birth place
 #' - Fine-tune model on military service
-#' - Isolate (fine-tune model on?) akimat name
 #' - Link cleaning before checks
 #' - Add a 'loading' spinner
 #' - Add a 'copy to clipboard' button
 #' - Server-side improvements
+#' - Error handling of dead urls :(
 
 # Preamble ----
 
@@ -67,6 +67,10 @@ library(reticulate)
 # Read the API key from a file
 api_key <- read.table("bio-extractor/api_key.txt") |>
     as.character()
+
+# Read in subdivision name dictionaries
+cleaned_subdiv_dictionary <- read_csv("bio-extractor/dictionaries/cleaned_subdiv_dictionary.csv", show_col_types = FALSE)
+cleaned_comb_dictionary <- read_csv("bio-extractor/dictionaries/cleaned_rayon_dictionary.csv", show_col_types = FALSE)
 
 # Functions ----
 
@@ -345,103 +349,148 @@ BirthDateTextExtractor <- function(input) {
     }
 }
 
-# Define the AkimatNameExtractor function
-AkimatNameExtractor <- function(input, akim_name) {
-    text_output <- MainTextExtractor(input)
-
-    raw_placename <- str_extract(text_output, regex(paste0("(?<=", akim_name, "\n\\s{0,1}Аким)[\\w\\s,]+?(?=\\n)"), ignore_case = TRUE))
-
-    if (!is.na(raw_placename)) {
-        nominative_placename <- to_case_sentence(raw_placename)
-        return(nominative_placename)
-    } else {
-        return(NA_character_)
-    }
-}
-
-input <- LinkToCareerText(link = link)
-akim_name <- AkimNameFinder(input)
-
-AkimatNameExtractor(input, akim_name)
-
-cleaned_comb_dictionary <- read_csv("cleaned_comb_dictionary.csv", show_col_types = FALSE)
-oblast_list1 <- cleaned_comb_dictionary |>
-    distinct(embedded_oblast) |>
-    filter(!is.na(embedded_oblast) &
-        embedded_oblast != "sauran" &
-        embedded_oblast != "akimat")
-
-oblast_list <- cleaned_comb_dictionary |>
-    distinct(oblast_name) |>
-    rename(embedded_oblast = oblast_name) |>
-    bind_rows(oblast_list1) |>
-    distinct(embedded_oblast) |>
-    pull(embedded_oblast)
-
-oblast_list <- c(oblast_list, "kostanai")
-
+# Define the ATDFromLink function
 ATDFromLink <- function(link) {
+    oblast_list1 <- cleaned_comb_dictionary |>
+        distinct(embedded_oblast) |>
+        filter(!is.na(embedded_oblast) &
+            embedded_oblast != "sauran" &
+            embedded_oblast != "akimat")
+
+    oblast_list <- cleaned_comb_dictionary |>
+        distinct(oblast_name) |>
+        rename(embedded_oblast = oblast_name) |>
+        bind_rows(oblast_list1) |>
+        distinct(embedded_oblast) |>
+        pull(embedded_oblast)
+
+    oblast_list <- c(oblast_list, "kostanai")
+
+
     tp_split <- list("oblast" = NA_character_, "rayon" = NA_character_, "subdistrict" = NA_character_)
 
     if (stringr::str_detect(link, "gov.kz")) {
         entity <- stringr::str_extract(
             link,
-            pattern = "(?<=https://www.gov.kz/memleket/entities/).*?(?=/about/structure/people/)"
+            pattern = "(?<=https://www.gov.kz/memleket/entities/).*?(?=/about/structure/)"
         )
 
-        if (stringr::str_detect(entity, "\\w+-\\w+-\\w+")) {
-            # Three part pattern case
-            three_phase <- stringr::str_replace_all(entity, pattern = "-", " ")
-            oblast <- stringr::str_split_i(three_phase, pattern = " ", 1)
-            rayon <- stringr::str_split_i(three_phase, pattern = " ", 2)
-            subdistrict <- stringr::str_split_i(three_phase, pattern = " ", 3)
+        if (!is.na(entity)) {
+            rayon <- NA_character_
+            oblast <- NA_character_
 
-            tp_split <- list("oblast" = oblast, "rayon" = rayon, "subdistrict" = subdistrict)
-        } else if (stringr::str_detect(entity, "\\w+-\\w+")) {
-            # Two part pattern case
-            two_phase <- stringr::str_replace_all(entity, pattern = "-", " ")
+            if (stringr::str_detect(entity, "\\w+-\\w+-\\w+")) {
+                # Three part pattern case
+                three_phase <- stringr::str_replace_all(entity, pattern = "-", " ")
+                oblast <- stringr::str_split_i(three_phase, pattern = " ", 1)
+                rayon <- stringr::str_split_i(three_phase, pattern = " ", 2)
+                subdistrict <- stringr::str_split_i(three_phase, pattern = " ", 3)
 
-            if (stringr::str_split_i(two_phase, pattern = " ", 1) %in% oblast_list) {
-                oblast <- stringr::str_split_i(two_phase, pattern = " ", 1)
-                rayon <- stringr::str_split_i(two_phase, pattern = " ", 2)
-                subdistrict <- NA_character_
+                tp_split <- list("oblast" = oblast, "rayon" = rayon, "subdistrict" = subdistrict)
+            } else if (stringr::str_detect(entity, "\\w+-\\w+")) {
+                # Two part pattern case
+                two_phase <- stringr::str_replace_all(entity, pattern = "-", " ")
 
-                tp_split <- list("oblast" = oblast, "rayon" = rayon, "subdistrict" = NA_character_)
+                if (stringr::str_split_i(two_phase, pattern = " ", 1) %in% oblast_list) {
+                    oblast <- stringr::str_split_i(two_phase, pattern = " ", 1)
+                    rayon <- stringr::str_split_i(two_phase, pattern = " ", 2)
+                    subdistrict <- NA_character_
+
+                    tp_split <- list("oblast" = oblast, "rayon" = rayon, "subdistrict" = NA_character_)
+                }
+            }
+
+            if (!is.na(rayon) && !is.na(oblast)) {
+                dictionary_row <- filter(cleaned_comb_dictionary, embedded_rayon == rayon & oblast_name == oblast)
+
+                rayon_proper <- dictionary_row |>
+                    pull(rayon_name_proper)
+
+                if (length(rayon_proper) != 0) {
+                    tp_split$rayon <- rayon_proper
+                }
+
+                oblast_proper <- dictionary_row |>
+                    pull(oblast_name_proper)
+
+                if (length(oblast_proper) != 0) {
+                    tp_split$oblast <- oblast_proper
+                }
+            }
+        }
+    }
+
+    return(tp_split)
+}
+
+# Define the ATDFromLink2 function
+#' This is a less computationally-intensive version of the function above.
+#' I invoke the above only if the less computationally-intensive version fails
+#' to find at least a rayon name.
+ATDFromLink2 <- function(link) {
+    atd_names <- list("oblast" = NA_character_, "rayon" = NA_character_, "subdistrict" = NA_character_)
+
+    if (stringr::str_detect(link, "gov.kz")) {
+        entity <- stringr::str_extract(
+            link,
+            pattern = "(?<=www.gov.kz/memleket/entities/).*?(?=/about/)"
+        )
+
+        if (!is.na(entity)) {
+            results <- cleaned_subdiv_dictionary |>
+                filter(entity_text == entity) |>
+                slice(1)
+
+            if (nrow(results) == 0) {
+                atd_names <- ATDFromLink(link)
+            } else if (pull(results, n) == 1) {
+                atd_names$oblast <- results$oblast_name_proper
+                atd_names$rayon <- results$rayon_name_proper
+                atd_names$subdistrict <- results$subdiv_name_proper
+            } else {
+                number_code_link <- str_extract(link, "about/structure/departments/leadership/\\d+/.+$")
+                number_code_link <- str_remove(number_code_link, "\\?lang.*|%3Flang.*")
+
+                results_code <- cleaned_subdiv_dictionary |>
+                    filter(str_detect(base_url, number_code_link))
+
+                if (nrow(results_code == 1)) {
+                    atd_names$oblast <- results_code$oblast_name_proper
+                    atd_names$rayon <- results_code$rayon_name_proper
+                    atd_names$subdistrict <- results_code$subdiv_name_proper
+                } else {
+                    atd_names$oblast <- results$oblast_name_proper
+                    atd_names$rayon <- results$rayon_name_proper
+                    atd_names$subdistrict <- NA_character_
+                }
             }
         }
 
-        dictionary_row <- filter(cleaned_comb_dictionary, embedded_rayon == rayon & oblast_name == oblast)
+        if (is.na(atd_names$rayon) || is.na(atd_names$subdistrict) && nrow(results) != 0) {
+            atd_names_check <- ATDFromLink(link)
 
-        rayon_proper <- dictionary_row |>
-            pull(rayon_name_proper)
+            if (!is.na(atd_names_check$subdistrict) && is.na(atd_names$subdistrict)) {
+                atd_names$subdistrict <- atd_names_check$subdistrict
+            }
 
-        if (length(rayon_proper) != 0) {
-            tp_split$rayon <- rayon_proper
-        }
 
-        oblast_proper <- dictionary_row |>
-            pull(oblast_name_proper)
+            if (!is.na(atd_names_check$rayon) && is.na(atd_names$rayon)) {
+                atd_names$rayon <- atd_names_check$rayon
 
-        if (length(oblast_proper) != 0) {
-            tp_split$oblast <- oblast_proper
+                if (!is.na(atd_names$subdistrict)) {
+                    r_for_removal <- to_case_sentence(atd_names_check$rayon, case = "gent")
+                    atd_names$subdistrict <- str_squish(str_remove(atd_names$subdistrict, r_for_removal))
+                }
+            }
+
+            if (!is.na(atd_names_check$oblast) && is.na(atd_names$oblast)) {
+                atd_names$oblast <- atd_names_check$oblast
+            }
         }
     }
-    return(tp_split)
+
+    return(atd_names)
 }
-link <- "https://www.gov.kz/memleket/entities/bko-kaztalovka/about/structure/people/4953?lang=ru"
-
-ATDFromLink(link)
-
-
-
-length(filter(oblast_structure_urls, entity_text == "dmikdf") |>
-    pull(entity_name))
-
-
-
-
-
-
 
 # Define the GPTBiographyPrompter function
 #' This function sends a prompt to the OpenAI API and retrieves a response.
@@ -545,7 +594,7 @@ instructions <-
         (for other links, it may fail to extract text or split it into sections) and click 'submit url'. The app scrapes the page and
         attempts to separate the name, career, and education sections for submission to the correct formatting model. It tries to
         autofill the relevant section with the text of these sections. This usually takes about 10 seconds. If the biography does not
-        match the typical patterns of a biography page, it inserts all the text into the top input box and you'll have to seperate it manually.
+        match the typical patterns of a biography page, it inserts all the text into the top input box and you'll have to seperate it manually. It uses a dictionary of administrative-territorial divisions to try to extract the correct names of the subdivisions.
     </li>
 
     <li>
@@ -556,7 +605,7 @@ instructions <-
     </li>
 </ol>
 <p>
-    <strong>Future tasks:</strong> Isolate akimat name. Fine-tune/include models for birth place, military service.
+    <strong>Future tasks:</strong> Fine-tune/include models for birth place, military service. Improve career extraction fine-tuning.
 </p>
 </small>
 "
@@ -573,6 +622,9 @@ ui <- fluidPage(
             htmlOutput("instructions"),
             textInput("url", "Enter URL:", value = ""),
             actionButton("url_submit", "Submit URL"),
+            textInput("akim_subdistrict", "Subdistrict (с.о., п.о., села и т.д.)", value = ""),
+            textInput("akim_rayon", "Rayon (Район или ГОЗ)", value = ""),
+            textInput("akim_oblast", "Oblast (Область или ГРЗ)", value = ""),
             textInput("akim_name_input", "Name", value = ""),
             textInput("akim_birth_date_input", "Birth date", value = ""),
             textAreaInput("biography_input", "Enter career (Карьера) section of biography:", value = "", rows = 20),
@@ -590,6 +642,11 @@ ui <- fluidPage(
 server <- function(input, output, session) {
     # Create reactive variables
     akim_name_reactive <- reactiveVal(NULL)
+
+    akim_subdistrict_reactive <- reactiveVal(NULL)
+    akim_rayon_reactive <- reactiveVal(NULL)
+    akim_oblast_reactive <- reactiveVal(NULL)
+
     akim_birth_date_reactive <- reactiveVal(NULL)
     akim_birth_date_text_reactive <- reactiveVal(NULL)
 
@@ -638,6 +695,28 @@ server <- function(input, output, session) {
         # Update the reactive variable
         akim_name_reactive(akim_name)
 
+        atd <- ATDFromLink2(input$url)
+
+        if (is.na(atd$subdistrict)) {
+            atd$subdistrict <- ""
+        }
+
+        if (is.na(atd$rayon)) {
+            atd$rayon <- ""
+        }
+
+        if (is.na(atd$oblast)) {
+            atd$oblast <- ""
+        }
+
+        akim_subdistrict <- atd$subdistrict
+        akim_rayon <- atd$rayon
+        akim_oblast <- atd$oblast
+
+        akim_subdistrict_reactive(akim_subdistrict)
+        akim_rayon_reactive(akim_rayon)
+        akim_oblast_reactive(akim_oblast)
+
         # Extract the akim's birth date
         if (basic_info != "") {
             # Run the functions on the basic info section, if it exists
@@ -661,6 +740,9 @@ server <- function(input, output, session) {
         updateTextAreaInput(session, "biography_input", value = biography)
         updateTextAreaInput(session, "basicinfo_input", value = basic_info)
         updateTextAreaInput(session, "akim_name_input", value = akim_name)
+        updateTextAreaInput(session, "akim_subdistrict", value = akim_subdistrict)
+        updateTextAreaInput(session, "akim_rayon", value = akim_rayon)
+        updateTextAreaInput(session, "akim_oblast", value = akim_oblast)
         updateTextAreaInput(session, "akim_birth_date_input", value = akim_birth_date)
     })
 
@@ -741,6 +823,21 @@ server <- function(input, output, session) {
             akim_birth_date_text <- NA_character_
         }
 
+        if (is.null(akim_subdistrict_reactive())) {
+            akim_subdistrict_reactive(input$akim_subdistrict)
+        }
+        akim_subdistrict <- akim_subdistrict_reactive()
+
+        if (is.null(akim_rayon_reactive())) {
+            akim_rayon_reactive(input$akim_rayon)
+        }
+        akim_rayon <- akim_rayon_reactive()
+
+        if (is.null(akim_oblast_reactive())) {
+            akim_oblast_reactive(input$akim_oblast)
+        }
+        akim_oblast <- akim_oblast_reactive()
+
         # If there is a birth date, add it to the table
         if (nrow(gpt_table) > 0 && !is.null(akim_birth_date) && akim_birth_date != "") {
             birth_date_table <- tibble::tibble(
@@ -757,15 +854,24 @@ server <- function(input, output, session) {
             gpt_table <- bind_rows(birth_date_table, gpt_table)
         }
 
+
+        gpt_table <- gpt_table |>
+            mutate(FIO = akim_name, .before = 1) |>
+            mutate(oblast = akim_oblast, .before = 1) |>
+            mutate(rayon = akim_rayon, .before = 1) |>
+            mutate(subdistrict = akim_subdistrict, .before = 1)
+
+
+
         # If there is a name, add it to the table as a column
-        if (nrow(gpt_table) > 0 && !is.null(akim_name) && length(akim_name) > 0) {
-            gpt_table <- gpt_table |>
-                mutate(FIO = akim_name, .before = 1)
-        } else if (nrow(gpt_table) > 0 && (is.null(akim_name) || length(akim_name) == 0)) {
-            # If there is no name, use an empty string for the column
-            gpt_table <- gpt_table |>
-                mutate(FIO = "", .before = 1)
-        }
+        # if (nrow(gpt_table) > 0 && !is.null(akim_name) && length(akim_name) > 0) {
+        #     gpt_table <- gpt_table |>
+        #         mutate(FIO = akim_name, .before = 1)
+        # } else if (nrow(gpt_table) > 0 && (is.null(akim_name) || length(akim_name) == 0)) {
+        #     # If there is no name, use an empty string for the column
+        #     gpt_table <- gpt_table |>
+        #         mutate(FIO = "", .before = 1)
+        # }
 
         # Render the table and the raw GPT responses
         output$gpt_table <- renderTable(gpt_table)
