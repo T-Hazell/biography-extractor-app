@@ -17,6 +17,8 @@
 # - BasicInformationTextExtractor: Extracts the basic information and education section from the input.
 # - BirthDateExtractor: Extracts the birth date from the input.
 # - BirthDateTextExtractor: Extracts the birth date text from the input.
+# - ATDFromLink: Extracts the administrative-territorial division from the URL.
+# - ATDFromLink2: Extracts the administrative-territorial division from the URL (less computationally intensive).
 # - GPTBiographyPrompter: Sends the input to the OpenAI API and returns the formatted response.
 #
 # Prompts:
@@ -349,8 +351,35 @@ BirthDateTextExtractor <- function(input) {
     }
 }
 
+#' Extract Territorial Division (ATD) From Link
+#'
+#' This function extracts the oblast, rayon, and subdistrict information
+#' from a given gov.kz link.
+#'
+#' @param link A character string representing the URL from which to extract
+#' the territorial division information.
+#'
+#' @return A list containing the extracted oblast, rayon, and subdistrict information.
+#' The list has the following structure:
+#' \describe{
+#'   \item{oblast}{The name of the oblast (region).}
+#'   \item{rayon}{The name of the rayon (district).}
+#'   \item{subdistrict}{The name of the subdistrict (if applicable).}
+#' }
+#'
+#' @details
+#' The function first constructs a list of distinct oblast names
+#' from a pre-defined dictionary. It then checks if the provided
+#' URL follows the expected pattern for gov.kz links. If the URL
+#' matches the pattern, the function extracts the entity name
+#' from the URL and determines whether it follows a three-part or
+#' two-part pattern. Based on the pattern, it extracts the oblast,
+#' rayon, and subdistrict names as they appear (in Latin script) in
+#' the url. The function also looks up the full names of the rayon
+#' and oblast from a dictionary.
 # Define the ATDFromLink function
 ATDFromLink <- function(link) {
+    # List of distinct oblast url names (x -- e.g., almobl)
     oblast_list1 <- cleaned_comb_dictionary |>
         distinct(embedded_oblast) |>
         filter(!is.na(embedded_oblast) &
@@ -364,55 +393,76 @@ ATDFromLink <- function(link) {
         distinct(embedded_oblast) |>
         pull(embedded_oblast)
 
+    # Manually add kostanai to the list - it's not in the dictionary but sometimes appears
     oblast_list <- c(oblast_list, "kostanai")
 
+    # Initialize the output list
+    tp_split <- list(
+        "oblast" = NA_character_,
+        "rayon" = NA_character_,
+        "subdistrict" = NA_character_
+    )
 
-    tp_split <- list("oblast" = NA_character_, "rayon" = NA_character_, "subdistrict" = NA_character_)
-
+    # Check the url follows the expected pattern for gov.kz links
     if (stringr::str_detect(link, "gov.kz")) {
+        # If it does, extract the entity name from the url (x-x or x-x-x)
         entity <- stringr::str_extract(
             link,
             pattern = "(?<=https://www.gov.kz/memleket/entities/).*?(?=/about/structure/)"
         )
 
+        # If the entity is not empty
         if (!is.na(entity)) {
+            # Initialize the oblast and rayon variables
             rayon <- NA_character_
             oblast <- NA_character_
 
+            # Check if the entity follows three-part or two-part pattern
             if (stringr::str_detect(entity, "\\w+-\\w+-\\w+")) {
                 # Three part pattern case
                 three_phase <- stringr::str_replace_all(entity, pattern = "-", " ")
+
+                # If x-x-x, strings are the oblast, rayon, and subdistrict respectively
                 oblast <- stringr::str_split_i(three_phase, pattern = " ", 1)
                 rayon <- stringr::str_split_i(three_phase, pattern = " ", 2)
                 subdistrict <- stringr::str_split_i(three_phase, pattern = " ", 3)
 
+                # Store the extracted values in the output list
                 tp_split <- list("oblast" = oblast, "rayon" = rayon, "subdistrict" = subdistrict)
             } else if (stringr::str_detect(entity, "\\w+-\\w+")) {
                 # Two part pattern case
                 two_phase <- stringr::str_replace_all(entity, pattern = "-", " ")
 
+                # If x-x, strings are [typically] the oblast and rayon respectively
                 if (stringr::str_split_i(two_phase, pattern = " ", 1) %in% oblast_list) {
                     oblast <- stringr::str_split_i(two_phase, pattern = " ", 1)
                     rayon <- stringr::str_split_i(two_phase, pattern = " ", 2)
                     subdistrict <- NA_character_
 
+                    # Store the extracted values in the output list
                     tp_split <- list("oblast" = oblast, "rayon" = rayon, "subdistrict" = NA_character_)
                 }
             }
 
+            # If the extracted values are not empty
             if (!is.na(rayon) && !is.na(oblast)) {
+                # Filter the dictionary to match on rayon grouped by oblast
                 dictionary_row <- filter(cleaned_comb_dictionary, embedded_rayon == rayon & oblast_name == oblast)
 
+                # Extract the full name of the rayon
                 rayon_proper <- dictionary_row |>
                     pull(rayon_name_proper)
 
+                # Record it if it's not empty
                 if (length(rayon_proper) != 0) {
                     tp_split$rayon <- rayon_proper
                 }
 
+                # Extract the full name of the oblast
                 oblast_proper <- dictionary_row |>
                     pull(oblast_name_proper)
 
+                # Record it if it's not empty
                 if (length(oblast_proper) != 0) {
                     tp_split$oblast <- oblast_proper
                 }
@@ -420,44 +470,83 @@ ATDFromLink <- function(link) {
         }
     }
 
+    # Return the extracted values
     return(tp_split)
 }
 
-# Define the ATDFromLink2 function
-#' This is a less computationally-intensive version of the function above.
-#' I invoke the above only if the less computationally-intensive version fails
-#' to find at least a rayon name.
+#' Extract Administrative-Territorial Division (ATD) Names from a gov.kz Link
+#'
+#' This function extracts the names of administrative-territorial divisions
+#' (oblast, rayon, subdistrict) from a given gov.kz link. It is a less
+#' computationally-intensive version of another function, `ATDFromLink`, and
+#' invokes `ATDFromLink` only if this function leaves any fields empty.
+#'
+#' @param link A character string representing the URL to be processed.
+#'
+#' @return A list containing the names of the oblast, rayon, and subdistrict
+#' extracted from the link. If the extraction is unsuccessful, the respective
+#' fields will contain `NA_character_`.
+#'
+#' @details The function first checks if the URL follows the expected pattern
+#' for gov.kz links. It then attempts to extract the entity name from the URL
+#' and matches it against a pre-cleaned subdivision dictionary. If a match is
+#' found, the function extracts the oblast, rayon, and subdistrict names. If
+#' the entity is not found or if further refinement is needed, the function
+#' attempts to match on a more specific department code. If any fields remain
+#' empty, the function invokes `ATDFromLink` to fill in the missing values.
+#'
+#' @examples
+#' \dontrun{
+#' link <- "https://www.gov.kz/memleket/entities/some-entity/about/structure/departments/leadership/12345"
+#' atd_names <- ATDFromLink2(link)
+#' print(atd_names)
+#' }
 ATDFromLink2 <- function(link) {
+    # Initialize the output list
     atd_names <- list("oblast" = NA_character_, "rayon" = NA_character_, "subdistrict" = NA_character_)
 
+    # Check if the URL follows the expected pattern for gov.kz links
     if (stringr::str_detect(link, "gov.kz")) {
+        # Extract the entity name from the URL (x-x or x-x-x)
         entity <- stringr::str_extract(
             link,
             pattern = "(?<=www.gov.kz/memleket/entities/).*?(?=/about/)"
         )
 
+        # If the entity is not empty
         if (!is.na(entity)) {
+            # Filter the dictionary to match on the entity text
             results <- cleaned_subdiv_dictionary |>
                 filter(entity_text == entity) |>
+                #' Take only one result; If n_{entity name} > 1, a
+                #' later step finds the exact subdivision name
                 slice(1)
 
+            # If the entity is not found in the dictionary
             if (nrow(results) == 0) {
+                # Apply the ATDFromLink function
                 atd_names <- ATDFromLink(link)
             } else if (pull(results, n) == 1) {
+                # If n = 1, extract the oblast, rayon, and subdistrict names
                 atd_names$oblast <- results$oblast_name_proper
                 atd_names$rayon <- results$rayon_name_proper
                 atd_names$subdistrict <- results$subdiv_name_proper
+                # If n > 1, try to find the exact subdivision name using a more specific link
             } else {
+                # In particular, we try and match on a 4/5 digit department code
                 number_code_link <- str_extract(link, "about/structure/departments/leadership/\\d+/.+$")
                 number_code_link <- str_remove(number_code_link, "\\?lang.*|%3Flang.*")
 
                 results_code <- cleaned_subdiv_dictionary |>
                     filter(str_detect(base_url, number_code_link))
 
+                # If that works, extract the oblast, rayon, and subdistrict names
                 if (nrow(results_code == 1)) {
                     atd_names$oblast <- results_code$oblast_name_proper
                     atd_names$rayon <- results_code$rayon_name_proper
                     atd_names$subdistrict <- results_code$subdiv_name_proper
+                    #' If that doesn't help, extract the oblast and rayon names and
+                    #' leave the subdistrict empty
                 } else {
                     atd_names$oblast <- results$oblast_name_proper
                     atd_names$rayon <- results$rayon_name_proper
@@ -466,29 +555,34 @@ ATDFromLink2 <- function(link) {
             }
         }
 
+        # If rayon or subdistrict is empty, apply the ATDFromLink function
         if (is.na(atd_names$rayon) || is.na(atd_names$subdistrict) && nrow(results) != 0) {
             atd_names_check <- ATDFromLink(link)
 
+            # If subdistrict is missing and ATDFromLink finds it, record it
             if (!is.na(atd_names_check$subdistrict) && is.na(atd_names$subdistrict)) {
                 atd_names$subdistrict <- atd_names_check$subdistrict
             }
 
-
+            # If rayon is missing and ATDFromLink finds it, record it
             if (!is.na(atd_names_check$rayon) && is.na(atd_names$rayon)) {
                 atd_names$rayon <- atd_names_check$rayon
 
+                # If subdistrict is not missing, remove the rayon name from it
                 if (!is.na(atd_names$subdistrict)) {
                     r_for_removal <- to_case_sentence(atd_names_check$rayon, case = "gent")
                     atd_names$subdistrict <- str_squish(str_remove(atd_names$subdistrict, r_for_removal))
                 }
             }
 
+            # If oblast is missing and ATDFromLink finds it, record it
             if (!is.na(atd_names_check$oblast) && is.na(atd_names$oblast)) {
                 atd_names$oblast <- atd_names_check$oblast
             }
         }
     }
 
+    # Return the extracted values
     return(atd_names)
 }
 
