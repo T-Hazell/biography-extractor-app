@@ -198,6 +198,39 @@ AkimNameFinder <- function(input) {
     return(text_output)
 }
 
+# Define the GenderGeusser function
+#' Geusses a person's gender based on Russian and Kazakh patrynomic endings.
+#'
+#' @param name A name, which must include the patronymic. The function includes a
+#'              naive check for this by testing if the input is made up of three
+#'              or more words.
+#' @return A character string, either:
+#'         - "0" if the function guesses this is a male person because their
+#'            patrynomic ends in "ич" or "ұлы" and does not contain "на" or "қызы".
+#'         - "1" if the function guesses this is a female person because their
+#'            patrynomic ends in "на" or "қызы" and does not contain "ич" or "ұлы".
+#'         - NA if the function cannot make a guess because none of these patterns
+#'            are found.
+GenderGeusser <- function(name) {
+    # Check if the name has three parts, and do not geuss if not
+    if (stringr::str_count(stringr::str_squish(name), "\\S+") < 3) {
+        return(NA_character_)
+    }
+
+    # Male patrynomic endings
+    if (stringr::str_detect(name, "ич\\b|ұлы\\b") && !stringr::str_detect(name, "на\\b|қызы\\b")) {
+        return("0")
+        # Female patrynomic endings
+    } else if (stringr::str_detect(name, "на\\b|қызы\\b") && !stringr::str_detect(name, "ич\\b|ұлы\\b")) {
+        return("1")
+
+        # Or if neither are found...
+    } else {
+        return(NA_character_)
+    }
+}
+
+
 # Define the MainTextExtractor function
 #' MainTextExtractor
 #'
@@ -951,11 +984,9 @@ server <- function(input, output, session) {
 
         gpt_table <- gpt_table |>
             mutate(FIO = akim_name, .before = 1) |>
-            mutate(oblast = akim_oblast, .before = 1) |>
-            mutate(rayon = akim_rayon, .before = 1) |>
-            mutate(subdistrict = akim_subdistrict, .before = 1)
-
-
+            mutate(tier1_name = akim_oblast, .before = 1) |>
+            mutate(tier2_name = akim_rayon, .before = 1) |>
+            mutate(tier3_name = akim_subdistrict, .before = 1)
 
         # If there is a name, add it to the table as a column
         # if (nrow(gpt_table) > 0 && !is.null(akim_name) && length(akim_name) > 0) {
